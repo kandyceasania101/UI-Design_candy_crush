@@ -1,0 +1,528 @@
+﻿<!--
+CandyCrush
+Your Name: Kandyce Burks
+Collaborators: NONE
+-->
+<!DOCTYPE html>
+<html>
+<!--
+/* Copyright (c) 2017 MIT 6.813/6.831 course staff, all rights reserved.
+ * Redistribution of original or derived work requires permission of course staff.
+ */
+-->
+
+<head>
+    <meta charset="utf-8">
+    <title>CandyCrush</title>
+    <!-- Load style sheets -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/css/bootstrap.css">
+    <link rel="stylesheet" href="mainLayout.css">
+    <!-- Use mobile-aware viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <!-- Load any supplemental Javascript libraries here -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/seedrandom/2.4.2/seedrandom.js">
+        <script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+
+    </script>
+    <script src="candy.js"></script>
+    <script src="board.js"></script>
+    <script src="rules.js"></script>
+    <script>
+
+            // By default, the first board loaded by your page will be the same
+            // each time you load (which is accomplished by "seeding" the random
+            // number generator. This makes testing (and grading!) easier!
+
+            // A short jQuery extension to read query parameters from the URL.
+            $.extend({
+                getUrlVars: function () {
+                var vars = [], pair;
+                var pairs = window.location.search.substr(1).split('&');
+                for (var i = 0; i < pairs.length; i++) {
+                pair = pairs[i].split('=');
+            vars.push(pair[0]);
+                    vars[pair[0]] = pair[1] &&
+                        decodeURIComponent(pair[1].replace(/\+/g, ' '));
+                }
+                return vars;
+            },
+            getUrlVar: function (name) {
+                return $.getUrlVars()[name];
+            }
+        });
+
+        // constants
+        var DEFAULT_BOARD_SIZE = 8;
+
+        // data model at global scope for easier debugging
+        var board;
+        var rules;
+        Math.seedrandom(0);
+        var elements = [];
+        var score = 0;
+        var alphabet = 'abcdefghijklmnopqrstuvwxyz'.split('');
+        var rowMax = 320 / DEFAULT_BOARD_SIZE;
+        var candyElement = '';
+
+        // initialize board
+        if ($.getUrlVar('size') && $.getUrlVar('size') >= 3) {
+                DEFAULT_BOARD_SIZE = $.getUrlVar('size');
+            rowMax = 320 / DEFAULT_BOARD_SIZE;
+            board = new Board($.getUrlVar('size'));
+        } else {
+                rowMax = 320 / DEFAULT_BOARD_SIZE;
+            board = new Board(DEFAULT_BOARD_SIZE);
+        }
+
+        // load a rule
+        rules = new Rules(board);
+
+        // Final initialization entry point: the Javascript code inside this block
+        // runs at the end of start-up when the page has finished loading.
+
+        var initialized = false;
+        var objClicked = false;
+        var mouseOut = false;
+        var y = $("mainTable").position();
+        var subMainColumn;
+
+        $(document).ready(function () {
+            initialized = true;
+            y = $("mainTable").position();
+            subMainColumn = document.getElementById('subMainColumn');
+        });
+
+
+        /* Event Handlers */
+        // access the candy object with info.candy
+
+        // add a candy to the board
+        var saveClickedCandy, saveTop, saveLeft, saveHoverCandy;
+        
+        function onMouseMove(event) {
+            moveAt(event.pageX, event.pageY);
+        } 
+
+        function moveAt(pageX, pageY) {
+                var offset = subMainColumn.getBoundingClientRect();
+
+                if ( !(pageX-(rowMax/2) <= offset.left) && !(pageX+(rowMax/2)-10 >= offset.left + (rowMax*DEFAULT_BOARD_SIZE))){
+                    if(!(pageY-(rowMax/2) <= offset.top) && !(pageY+(rowMax/2)-5 >= offset.top + (rowMax*DEFAULT_BOARD_SIZE))){
+                        saveClickedCandy.style.left = pageX - offset.left/2 - rowMax - 20 + 'px';
+                        saveClickedCandy.style.top = pageY - rowMax/2 + 'px'; 
+                    }
+                    else{ mouseOut = true; }
+                }
+                else{ mouseOut = true; }        
+        }
+
+        $(board).on('add', function (e, info) {
+            var candy = info.candy;
+            var offsetLeft = document.getElementById("mainTable").offsetLeft;
+            var objImg = document.createElement("img");
+
+            objImg.src = document.getElementById(candy).src;
+            objImg.class = 'draggable';
+            objImg.id = alphabet[info.toCol] + (info.toRow + 1);
+            objImg.height = rowMax;
+            objImg.width = rowMax;
+            objImg.style.position = "absolute";
+            objImg.style.left = info.toCol * rowMax + offsetLeft + "px";
+            objImg.style.top = info.toRow * rowMax + "px";
+
+            objImg.onclick = function () {
+                document.getElementById('candyCell').value = objImg.id;               
+                validateInput();
+                hideShowMove();
+            };
+
+            var saveTop, saveLeft;
+            objImg.onmousedown = function (event){
+                hideShowMove();
+                
+                window.saveTop = this.style.top;
+                window.saveLeft = this.style.left;
+                objClicked = true;
+
+                this.style.position = 'absolute';
+                this.style.zIndex = 1000;
+                
+                saveClickedCandy = this;
+
+                moveAt(event.pageX, event.pageY, objImg);
+                document.addEventListener('mousemove', onMouseMove);
+
+                this.ondragstart = function() {
+                    return false;
+                };
+
+            };
+
+            objImg.onmouseup = function (event){
+                this.style.zIndex = "auto";
+                this.style.zIndex = 1;
+                var candyClicked = searchForHoverCandy(this);
+                var offset = subMainColumn.getBoundingClientRect();
+                var left = offset.left;
+                var colNumber = Math.floor((event.pageX - left) / rowMax);
+                var rowNumber = Math.floor((event.pageY) / rowMax);
+                var candyHovered = board.getCandyAt(rowNumber, colNumber);
+
+                switchMove = true;
+
+                if(isNeighbor(candyClicked, candyHovered) && candyClicked != candyHovered && rules.isMoveTypeValid(candyClicked, validDirection)) {
+                    rules.removeCrushes(rules.getCandyCrushes());
+                    crush();
+                    showScoreUpdate();
+                    board.flipCandies(candyClicked, candyHovered);
+                } else { 
+                    returnCandyToOrigPosition(); 
+                }
+
+                objClicked = false;
+                document.removeEventListener('mousemove', onMouseMove);
+            };
+
+            if (initialized) {
+                setTimeout(function () {
+                    subMainColumn.append(objImg);
+                    $("#" + alphabet[candy.col] + (candy.row + 1)).css({ 'id': alphabet[info.toCol] + (info.toRow - 1), 'top': -rowMax + 'px', 'left': objImg.style.left + 'px', 'position': 'absolute', 'z-index': 20 });
+                    setTimeout(rules.moveCandiesDown(), 500);
+                    $("#" + alphabet[candy.col] + (candy.row + 1)).animate({ 'top': "+=" + (info.toRow + 1) * rowMax + "px" }, 400);
+
+                }, 700);
+            } else {
+                document.getElementById("subMainColumn").append(objImg);
+            }
+
+            elements.push({
+                tag: alphabet[info.toRow] + (info.toCol + 1),
+                width: rowMax,
+                height: rowMax,
+                top: info.toCol * rowMax,
+                left: info.toRow * rowMax
+            });
+        });
+
+        // move a candy on the board
+        var count = 0;
+        var temp, tempExtra, tempID;
+        var switchMove = false;
+        $(board).on('move', function (e, info) {
+            var operator = '+';
+            var id = alphabet[info.fromCol] + (info.fromRow + 1);
+            var toId = alphabet[info.toCol] + (info.toRow + 1);
+            var offsetLeft = subMainColumn.offsetLeft;
+
+            if(count != 0){
+            if (info.fromCol != info.toCol) {
+                if (info.fromCol > info.toCol && switchMove) {
+                operator = '-';
+            } else{operator = '+'; }
+                $("#" + id).animate({left: operator + "=" + rowMax * (Math.abs(info.fromCol - info.toCol)) + "px" });
+
+            }
+            if (info.fromRow != info.toRow) {
+                if (info.fromRow > info.toRow && switchMove) {
+                operator = '-';
+            } else{operator = '+'; }
+                $("#" + id).animate({top: operator + "=" + rowMax * (Math.abs(info.fromRow - info.toRow)) + "px" });
+            }
+            } else{
+                $("#" + id).animate({ left: (offsetLeft + (info.toCol * rowMax)) + "px" });
+            $("#" + id).animate({top: info.toRow*rowMax + "px" });
+            }
+            count++;
+            if (count == 1 && switchMove) {
+                temp = $('#' + id);
+            tempID = id;
+            } else if (switchMove) {
+                var curr = $('#' + id);
+                curr.attr('id', tempID);
+                temp.attr('id', id);
+                switchMove = false;
+                count = 0;
+            } else if (!switchMove) {
+                setTimeout(function () {
+                    var curr = $('#' + id);
+                    curr.attr('id', toId);
+                    count = 0;
+                }, 500);
+            }
+        });
+
+        function findElement(fruit) {
+            return fruit.tag === candyElement;
+        }
+
+        // remove a candy from the board
+        var removeNumber = 0;
+        $(board).on('remove', function (e, info) {
+                candyElement = alphabet[info.fromCol] + (info.fromRow + 1);
+            var deleteCandy = alphabet[info.fromCol] + (info.fromRow + 1);
+
+            if (initialized) {
+                removeNumber++;
+                setTimeout(function () {
+                    $("#" + deleteCandy).fadeOut("fast", function () {
+                        document.getElementById(deleteCandy).remove(deleteCandy);
+                    });
+                }, 400);
+            } else {
+                document.getElementById(deleteCandy).remove(deleteCandy);
+            }
+
+            elements.splice(elements.indexOf(elements.find(findElement)), 1);
+        });
+
+        // move a candy on the board
+        $(board).on('scoreUpdate', function (e, info) {
+                // Your code here. To be implemented in pset 2.
+                document.getElementById('label').innerHTML = (info.score + " points");
+            if (info.candy) {
+                document.getElementById('label').style.backgroundColor = info.candy.color;
+            }
+        });
+
+        // Button Events
+        $(document).on('click', "#buttonIDhere", function (evt) {
+                // Your code here.
+            });
+
+        // keyboard events arrive here
+        $(document).on('keydown', function (evt) {
+                // Your code here.
+            });
+
+        $(document).on('mouseup', function (evt) {
+            if (mouseOut && objClicked){
+                returnCandyToOrigPosition();
+                document.removeEventListener('mousemove', onMouseMove);
+            }
+            objClicked = false;
+        });
+
+        var validDirection = "nothing";
+        function isNeighbor(candyA, candyB){
+
+            if (candyA.row == candyB.row){
+                if ((candyA.col - candyB.col) == -1){
+                    validDirection = "right";
+                    return true;
+                } else if ((candyA.col - candyB.col) == 1){
+                    validDirection = "left";
+                    return true;
+                }
+            }
+            else if (candyA.col == candyB.col){
+                if ((candyA.row - candyB.row) == -1){
+                    validDirection = "down";
+                    return true;
+                } else if ((candyA.row - candyB.row) == 1){
+                    validDirection = "up";
+                    return true;
+                }
+            }
+            else{ return false; }
+
+            return true;
+        }
+
+        function returnCandyToOrigPosition(){
+            saveClickedCandy.style.zIndex = "auto";
+            saveClickedCandy.style.top = saveTop;
+            saveClickedCandy.style.left = saveLeft;
+        }
+
+        function draw_table() {
+            var can = document.getElementById("mainTable");
+            var ctx = can.getContext("2d");
+            ctx.lineWidth = .5;
+
+            for (var x = 0; x <= DEFAULT_BOARD_SIZE; x += 1) {
+                ctx.moveTo(x * rowMax, 0);
+            ctx.lineTo(x * rowMax, 320);
+            }
+
+            for (var x = 0; x <= DEFAULT_BOARD_SIZE; x += 1) {
+                ctx.moveTo(0, x * rowMax);
+            ctx.lineTo(320, x * rowMax);
+            }
+
+            ctx.strokeStyle = "black";
+            ctx.stroke();
+            rules.prepareNewGame();
+        }
+
+        function newGameClicked() {
+            hideShowMove();
+            initialized = false;
+            board.clear();
+            board.resetScore();
+            rules.prepareNewGame();
+            document.getElementById('label').style.backgroundColor = "rgb(248, 99, 126)";
+            setTimeout(function () {initialized = true; }, 500);
+        }
+
+        function showMove() {
+            var canvas = document.getElementById("showMoveCanvas");
+            var ctx = canvas.getContext('2d');
+            var candyMove = rules.getRandomValidMove();
+            var candy = candyMove.candy;
+
+            canvas.style.visibility = "visible";
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#000";
+            ctx.strokeStyle = '#000';
+            canvas.style.position = "absolute";
+            canvas.style.zIndex = "500";
+            canvas.style.left = ((candy.col * rowMax) + document.getElementById("mainTable").offsetLeft) + "px";
+            canvas.height = rowMax;
+            canvas.width = rowMax;
+
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.beginPath();
+
+            if (candyMove.direction == "right") {
+                ctx.rotate(0);
+            canvas.style.top = ((candy.row * rowMax)) + "px";
+                canvas.style.left = ((candy.col * rowMax) + document.getElementById("mainTable").offsetLeft + rowMax / 2) + "px";
+            } else if (candyMove.direction == "down") {
+                ctx.rotate(Math.PI / 2);
+            canvas.style.top = ((candy.row * rowMax) + rowMax / 2) + "px";
+            } else if (candyMove.direction == "left") {
+                ctx.rotate(Math.PI);
+            canvas.style.top = ((candy.row * rowMax)) + "px";
+                canvas.style.left = ((candy.col * rowMax) + document.getElementById("mainTable").offsetLeft - rowMax / 2) + "px";
+            } else if (candyMove.direction == "up") {
+                ctx.rotate(Math.PI * 3 / 2);
+                canvas.style.top = ((candy.row * rowMax) - rowMax / 2) + "px";
+            }
+
+            ctx.moveTo(-1 / 2 * canvas.width, 1 / 6 * canvas.height);
+            ctx.lineTo(-1 / 2 * canvas.width, -1 / 6 * canvas.height);
+            ctx.lineTo(0, -1 / 6 * canvas.height);
+            ctx.lineTo(0, -1 / 2 * canvas.height);
+            ctx.lineTo(3 / 8 * canvas.width, 0);
+            ctx.lineTo(0, 1 / 2 * canvas.height);
+            ctx.lineTo(0, 1 / 6 * canvas.height);
+
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function hideShowMove(){
+            var canvas = document.getElementById("showMoveCanvas");
+            var ctx = canvas.getContext('2d');
+            canvas.style.visibility = "hidden";
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function searchTableForCandy() {
+            candyElement = document.getElementById('candyCell').value.trim();
+            var x = alphabet.indexOf(candyElement.charAt(0));
+            var y = parseInt(candyElement.substr(1) - 1);
+            var table = document.getElementById('mainTable');
+            var candy = board.getCandyAt(y, x);
+            return candy;
+        }
+
+        function searchForHoverCandy(candyElement) {
+            var x = alphabet.indexOf(candyElement.id.charAt(0));
+            var y = parseInt(candyElement.id.substr(1) - 1);
+            var candy = board.getCandyAt(y, x);
+            return candy;
+        }
+
+        function validateInput() {
+            var userInput = document.getElementById('candyCell');
+            var input = userInput.value;
+            if (input.length == 2 || input.length == 3) {
+                var h = "a".charCodeAt(0);
+                var num = (parseInt(h, 10) + parseInt(DEFAULT_BOARD_SIZE, 10));
+                while (h < num) {
+                h++;
+            }
+                if ((input.charCodeAt(0) >= "a".charCodeAt(0) && input.charCodeAt(0) <= h)) {
+                    if (input.charAt(1) > 0 && parseInt(input.charAt(1)) < DEFAULT_BOARD_SIZE + 1) {
+            }
+                }
+            }
+        }
+
+        function showScoreUpdate() {
+            score = board.getScore();
+            document.getElementById('label').innerHTML = (score + " points ");
+        }
+
+        function changeScoreBackground() {
+            var candy = searchTableForCandy();
+            document.getElementById('label').setAttribute("background-color", candy);
+        }
+
+        function crush() {
+            document.getElementById('candyCell').disabled = true;
+            document.getElementById('showMove').disabled = true;
+            document.getElementById('newGame').disabled = true;
+            setTimeout(function () {
+                rules.moveCandiesDown();
+                setTimeout(reCrush, 700);
+            }, 500);
+        }
+
+        function reCrush() {
+            document.getElementById('candyCell').disabled = false;
+            document.getElementById('showMove').disabled = false;
+            document.getElementById('newGame').disabled = false;
+            document.getElementById('candyCell').value = '';
+            document.getElementById('candyCell').focus();
+                if (rules.getCandyCrushes().length >= 1) {
+                rules.removeCrushes(rules.getCandyCrushes());
+                    crush();
+                    showScoreUpdate();
+                }
+        }
+    </script>
+</head>
+
+<body style="background-image:url(graphics/background.jpg); background-repeat: no-repeat; background-size: 100% 100%;">
+    <img id="purple" width="100" height="100" src="graphics/purple-candy.png" alt="Purple" style="display: none;">
+    <img id="blue" width="100" height="100" src="graphics/blue-candy.png" alt="Purple" style="display: none;">
+    <img id="red" width="100" height="100" src="graphics/red-candy.png" alt="Purple" style="display: none;">
+    <img id="yellow" width="100" height="100" src="graphics/yellow-candy.png" alt="Purple" style="display: none;">
+    <img id="orange" width="100" height="100" src="graphics/orange-candy.png" alt="Purple" style="display: none;">
+    <img id="green" width="100" height="100" src="graphics/green-candy.png" alt="Purple" style="display: none;">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-2" id="firstColumn">
+                <div>
+                    <div style="font-size: 35px; font-weight: 700; color: red;">
+                            <img id="logo" width="150" height="100" src="graphics/logo.png" style="padding: 5px;">
+                    </div>
+                    <label id="label"> 0 points </label>
+                    <input type="button" id= "newGame" value="New Game" class="btn" onclick="newGameClicked()">
+                    <br>
+                    <input type="button" id= "showMove" value="Show Move" class="btn" onclick="showMove()" style="margin-top: 10px">
+                </div>
+            </div>
+            <div class="col-md-8" id="mainColumn">
+                <div id="subMainColumn" width="320" height="320" align="center" style="width: 320px; height: 320px; margin: 0 auto; background: rgba(102, 153, 153, 0.5);">
+                    <canvas id="mainTable" width="320" height="320" align="center">
+                        <script>
+                        draw_table();
+                        </script>
+                    </canvas>
+                    <canvas id="showMoveCanvas" width="45" height="45"></canvas>
+                </div>
+            </div>
+                <hidden input type="text" name="Move" value=" " size="1px" id="candyCell" >
+        </div>
+        <!-- class="row" -->
+    </div>
+    <!-- class="container" -->
+</body>
+
+</html>
